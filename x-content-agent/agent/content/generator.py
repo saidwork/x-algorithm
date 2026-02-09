@@ -302,29 +302,57 @@ class LLMContentGenerator:
     async def _call_llm(self, messages: list[dict]) -> str:
         """
         Call the LLM provider and return the response text.
-
-        Supports OpenAI-compatible API format. In production, this integrates
-        with the configured LLM provider via httpx async client.
+        Supports OpenAI-compatible API format (works with OpenAI, Anthropic via proxy, local).
         """
-        # This is the integration point for LLM providers.
-        # The actual HTTP call would be:
-        #
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.post(
-        #         f"{self._llm_config.base_url}/chat/completions",
-        #         headers={"Authorization": f"Bearer {self._llm_config.api_key}"},
-        #         json={
-        #             "model": self._llm_config.model,
-        #             "messages": messages,
-        #             "temperature": self._llm_config.temperature,
-        #             "max_tokens": self._llm_config.max_tokens,
-        #         },
-        #     )
-        #     return response.json()["choices"][0]["message"]["content"]
-        #
-        # For now, return empty to allow pipeline testing without API keys.
-        logger.info("LLM call with %d messages (provider: %s)", len(messages), self._llm_config.provider)
-        return "[]"
+        import httpx
+
+        if not self._llm_config.api_key:
+            logger.warning("No API key configured, returning empty response")
+            return "[]"
+
+        # Determine base URL
+        base_url = self._llm_config.base_url
+        if not base_url:
+            if self._llm_config.provider == "openai":
+                base_url = "https://api.openai.com/v1"
+            elif self._llm_config.provider == "anthropic":
+                base_url = "https://api.anthropic.com/v1"
+            else:
+                base_url = "https://api.openai.com/v1"
+
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._llm_config.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self._llm_config.model,
+            "messages": messages,
+            "temperature": self._llm_config.temperature,
+            "max_tokens": self._llm_config.max_tokens,
+        }
+
+        logger.info(
+            "LLM call: provider=%s model=%s messages=%d",
+            self._llm_config.provider,
+            self._llm_config.model,
+            len(messages),
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                logger.info("LLM response received: %d chars", len(content))
+                return content
+        except httpx.HTTPStatusError as e:
+            logger.error("LLM API error %d: %s", e.response.status_code, e.response.text[:200])
+            raise
+        except Exception:
+            logger.exception("LLM call failed")
+            raise
 
     @staticmethod
     def _extract_json(text: str) -> str:
