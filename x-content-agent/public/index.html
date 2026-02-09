@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X Content Agent</title>
+    <style>
+        /* ========== RESET & BASE ========== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #000000;
+            --bg-secondary: #16181c;
+            --bg-tertiary: #1d1f23;
+            --border: #2f3336;
+            --text-primary: #e7e9ea;
+            --text-secondary: #71767b;
+            --accent: #1d9bf0;
+            --accent-hover: #1a8cd8;
+            --green: #00ba7c;
+            --yellow: #ffd400;
+            --red: #f9197f;
+            --radius: 16px;
+            --radius-sm: 8px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        /* ========== LAYOUT ========== */
+        .app {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 320px;
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            background: var(--bg-primary);
+            z-index: 100;
+        }
+
+        .main {
+            margin-left: 320px;
+            flex: 1;
+            min-height: 100vh;
+        }
+
+        /* ========== SIDEBAR ========== */
+        .sidebar h1 {
+            font-size: 22px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar .subtitle {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent);
+        }
+
+        textarea { resize: vertical; min-height: 60px; }
+        select { cursor: pointer; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-size: 15px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            width: 100%;
+        }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--border);
+        }
+        .btn-outline:hover { background: var(--bg-secondary); }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 20px 0;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.active { background: var(--green); }
+        .status-dot.inactive { background: var(--text-secondary); }
+
+        .sidebar-status {
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-sm);
+        }
+
+        /* ========== TABS ========== */
+        .tab-bar {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            z-index: 50;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 16px;
+            text-align: center;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border: none;
+            background: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .tab-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+        .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+
+        .tab-content { display: none; padding: 24px; max-width: 800px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+
+        /* ========== CARDS ========== */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: border-color 0.2s;
+        }
+        .card:hover { border-color: #3f4347; }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .badge-green { background: rgba(0,186,124,0.15); color: var(--green); }
+        .badge-yellow { background: rgba(255,212,0,0.15); color: var(--yellow); }
+        .badge-red { background: rgba(249,25,127,0.15); color: var(--red); }
+        .badge-blue { background: rgba(29,155,240,0.15); color: var(--accent); }
+
+        .post-text {
+            font-size: 15px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            margin: 8px 0;
+            border-left: 3px solid var(--accent);
+        }
+
+        .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .metric-box {
+            text-align: center;
+            padding: 8px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ========== COPY BTN ========== */
+        .copy-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            border-radius: 9999px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .copy-btn:hover { background: var(--bg-tertiary); }
+        .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+        /* ========== GENERATE FORM ========== */
+        .gen-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* ========== SPINNER ========== */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .loading-overlay.show { display: flex; }
+        .loading-overlay .spinner { width: 40px; height: 40px; border-width: 3px; }
+
+        /* ========== TEMPLATE GRID ========== */
+        .tmpl-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .tmpl-card {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tmpl-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .tmpl-card .tmpl-name { font-weight: 700; font-size: 15px; }
+        .tmpl-card .tmpl-tags { margin-top: 8px; }
+        .tmpl-card .tmpl-preview {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            max-height: 60px;
+            overflow: hidden;
+        }
+
+        /* ========== ANALYZE ========== */
+        .gauge-container {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .gauge {
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius);
+        }
+
+        .gauge-ring {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main { margin-left: 0; }
+            .gen-grid { grid-template-columns: 1fr; }
+            .tmpl-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ========== TOAST ========== */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 24px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 2000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .toast.show { opacity: 1; }
+        .toast-success { background: var(--green); color: #000; }
+        .toast-error { background: var(--red); color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loader">
+        <div class="spinner"></div>
+        <div style="color:var(--text-primary);font-size:16px;font-weight:600;">Icerik uretiliyor...</div>
+        <div style="color:var(--text-secondary);font-size:13px;">LLM API cagriliyor, birka&ccedil; saniye surebilir</div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="app">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <h1>🤖 X Content Agent</h1>
+            <p class="subtitle">AI destekli X icerik uretici</p>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+                <label>LLM Provider</label>
+                <select id="cfg-provider" onchange="updateModels()">
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="local">Local</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Model</label>
+                <select id="cfg-model">
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-4-turbo">gpt-4-turbo</option>
+                    <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="cfg-apikey" placeholder="sk-... veya sk-ant-...">
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+                <label>X Kullanici Adi</label>
+                <input type="text" id="cfg-handle" placeholder="@kullaniciadi">
+            </div>
+
+            <div class="form-group">
+                <label>Nis / Alan</label>
+                <input type="text" id="cfg-niche" placeholder="Yapay Zeka, Teknoloji">
+            </div>
+
+            <div class="form-group">
+                <label>Marka Sesi</label>
+                <textarea id="cfg-brand" rows="2" placeholder="Gelistiriciler icin pratik AI icgoruleri"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Dil</label>
+                <select id="cfg-lang">
+                    <option value="tr">Turkce</option>
+                    <option value="en">English</option>
+                    <option value="de">Deutsch</option>
+                </select>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="sidebar-status" id="sidebar-status">
+                <span class="status-dot inactive"></span>
+                API Key girerek baslayın
+            </div>
+        </aside>
+
+        <!-- MAIN -->
+        <main class="main">
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchTab('generate')">Icerik Uret</button>
+                <button class="tab-btn" onclick="switchTab('templates')">Sablonlar</button>
+                <button class="tab-btn" onclick="switchTab('analyze')">Analiz</button>
+            </div>
+
+            <!-- TAB: GENERATE -->
+            <div class="tab-content active" id="tab-generate">
+                <h2 style="margin-bottom:4px">Icerik Uret</h2>
+                <p style="color:var(--text-secondary);margin-bottom:24px">X icin optimize edilmis icerik uretimi</p>
+
+                <div class="form-group">
+                    <label>Konu</label>
+                    <input type="text" id="gen-topic" placeholder="ornek: AI agentlerin gelecegi, Python ipuclari">
+                </div>
+
+                <div class="gen-grid">
+                    <div class="form-group">
+                        <label>Icerik Turu</label>
+                        <select id="gen-type">
+                            <option value="short_post">Kisa Post (280)</option>
+                            <option value="thread">Thread</option>
+                            <option value="long_post">Uzun Post</option>
+                            <option value="poll">Anket</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Ton</label>
+                        <select id="gen-tone">
+                            <option value="professional">Profesyonel</option>
+                            <option value="educational">Egitici</option>
+                            <option value="casual">Gundelik</option>
+                            <option value="provocative">Dusunduren</option>
+                            <option value="humorous">Esprili</option>
+                            <option value="inspirational">Ilham Verici</option>
+                            <option value="news">Haber</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Hedef</label>
+                        <select id="gen-goal">
+                            <option value="engagement">Etkilesim</option>
+                            <option value="reach">Erisim</option>
+                            <option value="follower_growth">Takipci Artisi</option>
+                            <option value="authority">Otorite</option>
+                            <option value="community">Topluluk</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="gen-grid" style="grid-template-columns:1fr 1fr">
+                    <div class="form-group">
+                        <label>Varyant Sayisi</label>
+                        <select id="gen-variants">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="5">5</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Maks Karakter</label>
+                        <input type="number" id="gen-maxchars" value="280">
+                    </div>
+                </div>
+
+                <!-- Thread key points (shown when thread selected) -->
+                <div class="form-group" id="thread-points-group" style="display:none">
+                    <label>Thread Ana Noktalari (her satira bir tane)</label>
+                    <textarea id="gen-keypoints" rows="4" placeholder="1. Ilk nokta&#10;2. Ikinci nokta&#10;3. Ucuncu nokta"></textarea>
+                </div>
+
+                <button class="btn btn-primary" id="btn-generate" onclick="generateContent()">
+                    Icerik Uret
+                </button>
+
+                <div id="results" style="margin-top:24px"></div>
+            </div>
+
+            <!-- TAB: TEMPLATES -->
+            <div class="tab-content" id="tab-templates">
+                <h2 style="margin-bottom:4px">Sablon Kutuphanesi</h2>
+                <p style="color:var(--text-secondary);margin-bottom:24px">Yuksek performansli X post formatlari</p>
+
+                <div class="gen-grid" style="grid-template-columns:1fr 1fr;margin-bottom:20px">
+                    <div class="form-group">
+                        <label>Hedefe Gore</label>
+                        <select id="tmpl-filter-goal" onchange="loadTemplates()">
+                            <option value="">Tumu</option>
+                            <option value="engagement">Etkilesim</option>
+                            <option value="reach">Erisim</option>
+                            <option value="authority">Otorite</option>
+                            <option value="community">Topluluk</option>
+                            <option value="follower_growth">Takipci Artisi</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Ture Gore</label>
+                        <select id="tmpl-filter-type" onchange="loadTemplates()">
+                            <option value="">Tumu</option>
+                            <option value="short_post">Kisa Post</option>
+                            <option value="thread">Thread</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="tmpl-grid" id="tmpl-list"></div>
+
+                <!-- Template detail modal -->
+                <div id="tmpl-detail" style="display:none;margin-top:20px">
+                    <div class="card" style="border-color:var(--accent)">
+                        <h3 id="tmpl-detail-name"></h3>
+                        <div class="post-text" id="tmpl-detail-template" style="margin:12px 0"></div>
+                        <div id="tmpl-detail-form"></div>
+                        <button class="btn btn-primary" style="margin-top:12px" onclick="renderTemplate()">Sablon Uygula</button>
+                        <div id="tmpl-result" style="margin-top:16px"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: ANALYZE -->
+            <div class="tab-content" id="tab-analyze">
+                <h2 style="margin-bottom:4px">Etkilesim Analizi</h2>
+                <p style="color:var(--text-secondary);margin-bottom:24px">Herhangi bir metnin tahmini performansini hesaplayin</p>
+
+                <div class="form-group">
+                    <label>Post Metni</label>
+                    <textarea id="analyze-text" rows="5" placeholder="Analiz etmek istediginiz icerigi yazin..."></textarea>
+                </div>
+
+                <div class="gen-grid" style="grid-template-columns:1fr 1fr">
+                    <div class="form-group">
+                        <label>Trend Skoru (0-1)</label>
+                        <input type="range" id="analyze-trend" min="0" max="1" step="0.1" value="0.3"
+                               style="width:100%;accent-color:var(--accent)"
+                               oninput="document.getElementById('trend-val').textContent=this.value">
+                        <span id="trend-val" style="color:var(--text-secondary);font-size:13px">0.3</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Icerik Turu</label>
+                        <select id="analyze-type">
+                            <option value="false">Tek Post</option>
+                            <option value="true">Thread</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="analyzeContent()">Analiz Et</button>
+
+                <div id="analyze-results" style="margin-top:24px"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ========== CONFIG ==========
+        const API_BASE = window.location.origin;
+
+        function getConfig() {
+            return {
+                api_key: document.getElementById('cfg-apikey').value,
+                provider: document.getElementById('cfg-provider').value,
+                model: document.getElementById('cfg-model').value,
+                language: document.getElementById('cfg-lang').value,
+                brand_description: document.getElementById('cfg-brand').value,
+            };
+        }
+
+        function updateModels() {
+            const provider = document.getElementById('cfg-provider').value;
+            const select = document.getElementById('cfg-model');
+            const models = {
+                openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+                anthropic: ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
+                local: ['local-model'],
+            };
+            select.innerHTML = (models[provider] || models.openai)
+                .map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+
+        // Update sidebar status when API key changes
+        document.getElementById('cfg-apikey').addEventListener('input', function() {
+            const status = document.getElementById('sidebar-status');
+            if (this.value) {
+                const provider = document.getElementById('cfg-provider').value;
+                const model = document.getElementById('cfg-model').value;
+                status.innerHTML = `<span class="status-dot active"></span>Hazir | ${provider} / ${model}`;
+            } else {
+                status.innerHTML = `<span class="status-dot inactive"></span>API Key girerek baslayin`;
+            }
+        });
+
+        // Show/hide thread key points
+        document.getElementById('gen-type').addEventListener('change', function() {
+            document.getElementById('thread-points-group').style.display =
+                this.value === 'thread' ? 'block' : 'none';
+        });
+
+        // ========== TABS ==========
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tabId === 'templates') loadTemplates();
+        }
+
+        // ========== TOAST ==========
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `toast toast-${type} show`;
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // ========== GENERATE ==========
+        async function generateContent() {
+            const cfg = getConfig();
+            if (!cfg.api_key) { showToast('Lutfen API Key girin!', 'error'); return; }
+
+            const topic = document.getElementById('gen-topic').value;
+            if (!topic) { showToast('Lutfen bir konu girin!', 'error'); return; }
+
+            const contentType = document.getElementById('gen-type').value;
+            const keyPointsRaw = document.getElementById('gen-keypoints').value;
+            const keyPoints = keyPointsRaw ? keyPointsRaw.split('\n').filter(l => l.trim()) : [];
+
+            const payload = {
+                ...cfg,
+                topic,
+                content_type: contentType,
+                tone: document.getElementById('gen-tone').value,
+                goal: document.getElementById('gen-goal').value,
+                num_variants: parseInt(document.getElementById('gen-variants').value),
+                max_chars: parseInt(document.getElementById('gen-maxchars').value),
+                key_points: keyPoints,
+            };
+
+            document.getElementById('loader').classList.add('show');
+            document.getElementById('btn-generate').disabled = true;
+
+            try {
+                const resp = await fetch(API_BASE + '/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'API hatasi');
+
+                renderResults(data);
+                showToast(`${data.count} icerik uretildi!`);
+            } catch (err) {
+                showToast(err.message, 'error');
+                document.getElementById('results').innerHTML =
+                    `<div class="card" style="border-color:var(--red)"><p style="color:var(--red)">Hata: ${err.message}</p></div>`;
+            } finally {
+                document.getElementById('loader').classList.remove('show');
+                document.getElementById('btn-generate').disabled = false;
+            }
+        }
+
+        function renderResults(data) {
+            const container = document.getElementById('results');
+            if (!data.drafts || data.drafts.length === 0) {
+                container.innerHTML = '<div class="card"><p style="color:var(--text-secondary)">Sonuc bulunamadi.</p></div>';
+                return;
+            }
+
+            container.innerHTML = data.drafts.map((d, i) => {
+                const p = d.prediction;
+                const score = p.weighted_score;
+                const badgeClass = score > 0.15 ? 'badge-green' : score > 0.05 ? 'badge-yellow' : 'badge-red';
+                const badgeLabel = score > 0.15 ? 'Yuksek' : score > 0.05 ? 'Orta' : 'Dusuk';
+
+                return `
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <strong>Varyant ${i + 1}</strong>
+                            <span class="badge badge-blue" style="margin-left:8px">${d.hook_type}</span>
+                        </div>
+                        <div>
+                            <span class="badge ${badgeClass}">${badgeLabel} (${score.toFixed(3)})</span>
+                            <button class="copy-btn" style="margin-left:8px" onclick="copyText(this, \`${escapeJs(d.text)}\`)">Kopyala</button>
+                        </div>
+                    </div>
+                    <div class="post-text">${escapeHtml(d.text)}</div>
+                    ${d.hashtags.length ? '<div style="margin:8px 0">' + d.hashtags.map(h => `<span class="badge badge-blue">#${h}</span> `).join('') + '</div>' : ''}
+                    <div style="font-size:13px;color:var(--text-secondary)">${d.char_count} karakter</div>
+                    <div class="metrics-row">
+                        <div class="metric-box"><div class="metric-value" style="color:var(--red)">♥ ${(p.p_like * 100).toFixed(1)}%</div><div class="metric-label">Begeni</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--accent)">💬 ${(p.p_reply * 100).toFixed(1)}%</div><div class="metric-label">Yanit</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--green)">🔁 ${(p.p_repost * 100).toFixed(1)}%</div><div class="metric-label">RT</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--yellow)">🔖 ${(p.p_bookmark * 100).toFixed(1)}%</div><div class="metric-label">Yer Imi</div></div>
+                        <div class="metric-box"><div class="metric-value">~${p.predicted_impressions.toLocaleString()}</div><div class="metric-label">Erisim</div></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // ========== TEMPLATES ==========
+        let allTemplates = [];
+
+        async function loadTemplates() {
+            const goal = document.getElementById('tmpl-filter-goal').value;
+            const type = document.getElementById('tmpl-filter-type').value;
+            let url = API_BASE + '/api/templates?';
+            if (goal) url += `goal=${goal}&`;
+            if (type) url += `type=${type}&`;
+
+            try {
+                const resp = await fetch(url);
+                const data = await resp.json();
+                allTemplates = data.templates;
+                renderTemplateList(data.templates);
+            } catch (err) {
+                console.error('Template load error:', err);
+            }
+        }
+
+        function renderTemplateList(templates) {
+            const container = document.getElementById('tmpl-list');
+            container.innerHTML = templates.map(t => `
+                <div class="card tmpl-card" onclick="selectTemplate('${t.id}')">
+                    <div class="tmpl-name">${t.name}</div>
+                    <div style="margin-top:4px">
+                        <span class="badge badge-blue">${t.type}</span>
+                        <span class="badge badge-green">${t.goal}</span>
+                    </div>
+                    <div class="tmpl-tags">${t.tags.map(tag => `<span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary);margin-right:4px">${tag}</span>`).join('')}</div>
+                    <div class="tmpl-preview">${escapeHtml(t.template)}</div>
+                </div>
+            `).join('');
+        }
+
+        let selectedTemplate = null;
+
+        function selectTemplate(id) {
+            selectedTemplate = allTemplates.find(t => t.id === id);
+            if (!selectedTemplate) return;
+
+            document.getElementById('tmpl-detail').style.display = 'block';
+            document.getElementById('tmpl-detail-name').textContent = selectedTemplate.name;
+            document.getElementById('tmpl-detail-template').textContent = selectedTemplate.template;
+
+            const form = document.getElementById('tmpl-detail-form');
+            form.innerHTML = selectedTemplate.required_vars.map(v => `
+                <div class="form-group">
+                    <label>${v}</label>
+                    ${v === 'mistakes' || v === 'resources'
+                        ? `<textarea id="tmpl-var-${v}" rows="3" placeholder="Her satira bir tane"></textarea>`
+                        : `<input type="text" id="tmpl-var-${v}" placeholder="${v}">`
+                    }
+                </div>
+            `).join('');
+
+            document.getElementById('tmpl-result').innerHTML = '';
+        }
+
+        async function renderTemplate() {
+            if (!selectedTemplate) return;
+
+            const variables = {};
+            for (const v of selectedTemplate.required_vars) {
+                const el = document.getElementById('tmpl-var-' + v);
+                if (!el || !el.value) { showToast(`"${v}" alanini doldurun`, 'error'); return; }
+
+                if (v === 'mistakes' || v === 'resources') {
+                    variables[v] = el.value.split('\n').filter(l => l.trim());
+                    variables['count'] = variables[v].length;
+                } else {
+                    variables[v] = el.value;
+                }
+            }
+
+            try {
+                const resp = await fetch(API_BASE + '/api/templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ template_id: selectedTemplate.id, variables }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error);
+
+                document.getElementById('tmpl-result').innerHTML = `
+                    <div class="post-text">${escapeHtml(data.rendered)}</div>
+                    <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+                        <span style="color:var(--text-secondary);font-size:13px">${data.char_count} karakter</span>
+                        <button class="copy-btn" onclick="copyText(this, \`${escapeJs(data.rendered)}\`)">Kopyala</button>
+                    </div>`;
+                showToast('Sablon uygulandi!');
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // ========== ANALYZE ==========
+        async function analyzeContent() {
+            const text = document.getElementById('analyze-text').value;
+            if (!text) { showToast('Metin girin!', 'error'); return; }
+
+            try {
+                const resp = await fetch(API_BASE + '/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text,
+                        trending_score: parseFloat(document.getElementById('analyze-trend').value),
+                        is_thread: document.getElementById('analyze-type').value === 'true',
+                    }),
+                });
+                const d = await resp.json();
+                if (!resp.ok) throw new Error(d.error);
+
+                const scoreColor = d.weighted_score > 0.15 ? 'var(--green)' : d.weighted_score > 0.05 ? 'var(--yellow)' : 'var(--red)';
+
+                document.getElementById('analyze-results').innerHTML = `
+                    <div class="gauge-container">
+                        <div class="gauge">
+                            <div class="gauge-ring" style="border:4px solid ${scoreColor}">${d.weighted_score.toFixed(2)}</div>
+                            <div class="metric-label">Toplam Skor</div>
+                        </div>
+                        <div class="gauge">
+                            <div class="gauge-ring" style="border:4px solid ${d.hook_score > 0.5 ? 'var(--green)' : 'var(--yellow)'}">${(d.hook_score * 100).toFixed(0)}%</div>
+                            <div class="metric-label">Hook Gucu</div>
+                        </div>
+                        <div class="gauge">
+                            <div class="gauge-ring" style="border:4px solid ${d.engagement_trigger_score > 0.5 ? 'var(--green)' : 'var(--yellow)'}">${(d.engagement_trigger_score * 100).toFixed(0)}%</div>
+                            <div class="metric-label">Etkilesim Tetikleyici</div>
+                        </div>
+                        <div class="gauge">
+                            <div class="gauge-ring" style="border:4px solid var(--accent)">${(d.virality_score * 100).toFixed(0)}%</div>
+                            <div class="metric-label">Virallik</div>
+                        </div>
+                    </div>
+
+                    <div class="metrics-row" style="margin-top:16px">
+                        <div class="metric-box"><div class="metric-value" style="color:var(--red)">♥ ${(d.p_like * 100).toFixed(1)}%</div><div class="metric-label">Begeni</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--accent)">💬 ${(d.p_reply * 100).toFixed(1)}%</div><div class="metric-label">Yanit</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--green)">🔁 ${(d.p_repost * 100).toFixed(1)}%</div><div class="metric-label">RT</div></div>
+                        <div class="metric-box"><div class="metric-value" style="color:var(--yellow)">🔖 ${(d.p_bookmark * 100).toFixed(1)}%</div><div class="metric-label">Yer Imi</div></div>
+                        <div class="metric-box"><div class="metric-value">👤 ${(d.p_follow * 100).toFixed(2)}%</div><div class="metric-label">Takip</div></div>
+                        <div class="metric-box"><div class="metric-value">~${d.predicted_impressions.toLocaleString()}</div><div class="metric-label">Erisim</div></div>
+                    </div>
+
+                    <div class="card" style="margin-top:16px">
+                        <h4 style="margin-bottom:12px">Icerik Ozellikleri</h4>
+                        <div class="metrics-row">
+                            ${Object.entries(d.features).map(([k, v]) => `
+                                <div class="metric-box">
+                                    <div class="metric-value" style="color:${v > 0.5 ? 'var(--green)' : v > 0 ? 'var(--yellow)' : 'var(--text-secondary)'}">${v > 0 ? '✓' : '✗'}</div>
+                                    <div class="metric-label">${k.replace(/_/g, ' ')}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div style="margin-top:12px;color:var(--text-secondary);font-size:13px">${d.char_count} karakter</div>
+                    </div>
+
+                    <div class="card" style="margin-top:12px;border-color:var(--red)30">
+                        <h4 style="margin-bottom:8px">Negatif Sinyaller</h4>
+                        <div class="metrics-row">
+                            <div class="metric-box"><div class="metric-value" style="font-size:14px">${(d.p_mute * 100).toFixed(3)}%</div><div class="metric-label">Susturma</div></div>
+                            <div class="metric-box"><div class="metric-value" style="font-size:14px">${(d.p_unfollow * 100).toFixed(3)}%</div><div class="metric-label">Takipten Cikma</div></div>
+                            <div class="metric-box"><div class="metric-value" style="font-size:14px">${(d.p_report * 100).toFixed(3)}%</div><div class="metric-label">Sikayet</div></div>
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // ========== UTILS ==========
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+        }
+
+        function escapeJs(str) {
+            return str.replace(/\\/g,'\\\\').replace(/`/g,'\\`').replace(/\$/g,'\\$');
+        }
+
+        function copyText(btn, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                btn.textContent = 'Kopyalandi!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = 'Kopyala'; btn.classList.remove('copied'); }, 2000);
+            });
+        }
+
+        // Init
+        loadTemplates();
+    </script>
+</body>
+</html>
