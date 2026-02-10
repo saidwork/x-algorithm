@@ -482,19 +482,23 @@
             <div class="pipeline-steps">
                 <div class="pipeline-step" id="step-1">
                     <div class="step-icon">1</div>
-                    <span>Trend konulari ve firsatlari taraniyor...</span>
+                    <span>Trend ve firsat analizi yapiliyor...</span>
                 </div>
                 <div class="pipeline-step" id="step-2">
                     <div class="step-icon">2</div>
-                    <span>En yuksek potansiyelli konu seciliyor...</span>
+                    <span>En yuksek potansiyelli konu + arguman seciliyor...</span>
                 </div>
                 <div class="pipeline-step" id="step-3">
                     <div class="step-icon">3</div>
-                    <span>Algoritma bilgisiyle icerik uretiliyor...</span>
+                    <span>Uzun formatta bilgi dolu icerik uretiliyor...</span>
                 </div>
                 <div class="pipeline-step" id="step-4">
                     <div class="step-icon">4</div>
-                    <span>Engagement tahmini ve skorlama yapiliyor...</span>
+                    <span>DALL-E ile gorsel olusturuluyor...</span>
+                </div>
+                <div class="pipeline-step" id="step-5">
+                    <div class="step-icon">5</div>
+                    <span>Algoritma skoru hesaplaniyor ve siralamaniyor...</span>
                 </div>
             </div>
         </div>
@@ -627,7 +631,7 @@
 
         // ---- Pipeline step animation ----
         function setPipelineStep(stepNum) {
-            for (let i = 1; i <= 4; i++) {
+            for (let i = 1; i <= 5; i++) {
                 const el = document.getElementById('step-' + i);
                 el.classList.remove('active', 'done');
                 if (i < stepNum) {
@@ -643,7 +647,7 @@
         }
 
         function resetPipeline() {
-            for (let i = 1; i <= 4; i++) {
+            for (let i = 1; i <= 5; i++) {
                 const el = document.getElementById('step-' + i);
                 el.classList.remove('active', 'done');
                 el.querySelector('.step-icon').textContent = i;
@@ -673,9 +677,10 @@
 
             // Animate steps
             setPipelineStep(1);
-            const stepTimer2 = setTimeout(() => setPipelineStep(2), 3000);
-            const stepTimer3 = setTimeout(() => setPipelineStep(3), 7000);
-            const stepTimer4 = setTimeout(() => setPipelineStep(4), 12000);
+            const stepTimer2 = setTimeout(() => setPipelineStep(2), 4000);
+            const stepTimer3 = setTimeout(() => setPipelineStep(3), 8000);
+            const stepTimer4 = setTimeout(() => setPipelineStep(4), 15000);
+            const stepTimer5 = setTimeout(() => setPipelineStep(5), 22000);
 
             try {
                 const resp = await fetch(API_BASE + '/api/auto', {
@@ -693,9 +698,10 @@
                 clearTimeout(stepTimer2);
                 clearTimeout(stepTimer3);
                 clearTimeout(stepTimer4);
+                clearTimeout(stepTimer5);
 
                 // All steps done
-                for (let i = 1; i <= 4; i++) {
+                for (let i = 1; i <= 5; i++) {
                     const el = document.getElementById('step-' + i);
                     el.classList.remove('active');
                     el.classList.add('done');
@@ -711,6 +717,7 @@
                 clearTimeout(stepTimer2);
                 clearTimeout(stepTimer3);
                 clearTimeout(stepTimer4);
+                clearTimeout(stepTimer5);
                 showToast(err.message, 'error');
                 resultsDiv.innerHTML = `
                     <div class="result-card" style="border-color:var(--red)">
@@ -728,6 +735,18 @@
             const container = document.getElementById('results');
             let html = '';
 
+            // Generated image
+            if (data.image_url) {
+                html += `
+                <div class="result-card" style="border-color:var(--accent);padding:0;overflow:hidden">
+                    <img src="${data.image_url}" alt="AI Generated Visual" style="width:100%;display:block;border-radius:var(--radius) var(--radius) 0 0">
+                    <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-size:13px;color:var(--text-secondary)">DALL-E 3 ile uretilen gorsel - postle birlikte paylas</span>
+                        <a href="${data.image_url}" target="_blank" class="copy-btn" style="text-decoration:none">Gorseli Indir</a>
+                    </div>
+                </div>`;
+            }
+
             // Topic card
             if (data.topic_selected) {
                 const t = data.topic_selected;
@@ -735,6 +754,7 @@
                 <div class="topic-card">
                     <h3>Agent'in Sectigi Konu</h3>
                     <div class="topic-selected">${escapeHtml(t.topic || '')}</div>
+                    ${t.argument ? `<p style="color:var(--accent);font-size:14px;margin:8px 0;font-style:italic">"${escapeHtml(t.argument)}"</p>` : ''}
                     <div class="topic-meta">
                         <span class="badge badge-blue">${t.content_type || 'post'}</span>
                         <span class="badge badge-green">${t.goal || 'engagement'}</span>
@@ -762,8 +782,9 @@
                 html += data.drafts.map((d, i) => {
                     const p = d.prediction;
                     const score = p.weighted_score;
-                    const badgeClass = score > 0.15 ? 'badge-green' : score > 0.05 ? 'badge-yellow' : 'badge-red';
-                    const badgeText = score > 0.15 ? 'Yuksek Potansiyel' : score > 0.05 ? 'Orta' : 'Dusuk';
+                    const badgeClass = score > 0.15 ? 'badge-green' : score > 0.08 ? 'badge-yellow' : 'badge-red';
+                    const badgeText = score > 0.15 ? 'Yuksek Potansiyel' : score > 0.08 ? 'Orta' : 'Dusuk';
+                    const dwellColor = (p.dwell_time_score || 0) > 0.6 ? 'var(--green)' : (p.dwell_time_score || 0) > 0.3 ? 'var(--yellow)' : 'var(--red)';
 
                     return `
                     <div class="result-card">
@@ -778,16 +799,18 @@
                         </div>
                         <div class="post-text">${escapeHtml(d.text)}</div>
                         <div class="result-footer">
-                            <span class="char-count">${d.char_count} karakter</span>
+                            <span class="char-count">${d.char_count} karakter / ${d.word_count || '?'} kelime</span>
                             <button class="copy-btn" onclick="copyText(this, ${escapeAttr(JSON.stringify(d.text))})">Kopyala</button>
                         </div>
                         <div class="metrics-row">
-                            <div class="metric-box"><div class="metric-value" style="color:var(--red)">${(p.p_like * 100).toFixed(1)}%</div><div class="metric-label">Begeni</div></div>
-                            <div class="metric-box"><div class="metric-value" style="color:var(--accent)">${(p.p_reply * 100).toFixed(1)}%</div><div class="metric-label">Yanit</div></div>
-                            <div class="metric-box"><div class="metric-value" style="color:var(--green)">${(p.p_repost * 100).toFixed(1)}%</div><div class="metric-label">RT</div></div>
-                            <div class="metric-box"><div class="metric-value" style="color:var(--yellow)">${(p.p_bookmark * 100).toFixed(1)}%</div><div class="metric-label">Kaydet</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:var(--accent)">${(p.p_reply * 100).toFixed(1)}%</div><div class="metric-label">Yanit (3x)</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:var(--green)">${(p.p_repost * 100).toFixed(1)}%</div><div class="metric-label">RT (5x)</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:var(--yellow)">${(p.p_quote * 100).toFixed(1)}%</div><div class="metric-label">Quote (4x)</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:var(--yellow)">${(p.p_bookmark * 100).toFixed(1)}%</div><div class="metric-label">Kaydet (2.5x)</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:${dwellColor}">${((p.dwell_time_score || 0) * 100).toFixed(0)}%</div><div class="metric-label">Dwell Time</div></div>
                             <div class="metric-box"><div class="metric-value">${(p.virality_score * 100).toFixed(0)}%</div><div class="metric-label">Virallik</div></div>
                             <div class="metric-box"><div class="metric-value">${(p.hook_score * 100).toFixed(0)}%</div><div class="metric-label">Hook</div></div>
+                            <div class="metric-box"><div class="metric-value" style="color:var(--red)">${(p.p_like * 100).toFixed(1)}%</div><div class="metric-label">Begeni (1x)</div></div>
                         </div>
                     </div>`;
                 }).join('');
