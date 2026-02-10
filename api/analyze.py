@@ -82,6 +82,9 @@ def predict_engagement(text, trending_score=0.3, is_thread=False):
 
 
 class handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -101,14 +104,24 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _set_cors(self, origin):
+        host = self.headers.get("Host", "")
+        if origin and host and (host in origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", f"https://{host}" if host else "")
+        self.send_header("Vary", "Origin")
+
     def _respond(self, code, data):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())

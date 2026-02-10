@@ -62,6 +62,9 @@ env = Environment(loader=BaseLoader())
 
 
 class handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
     def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
@@ -101,14 +104,24 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _set_cors(self, origin):
+        host = self.headers.get("Host", "")
+        if origin and host and (host in origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", f"https://{host}" if host else "")
+        self.send_header("Vary", "Origin")
+
     def _respond(self, code, data):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())

@@ -201,7 +201,22 @@ async def call_llm(api_key, provider, model, messages, temperature=0.8, max_toke
         return resp.json()["choices"][0]["message"]["content"]
 
 
+def _scrub_secrets(text, api_key=""):
+    """Remove any API key fragments from error messages."""
+    if api_key and len(api_key) > 8:
+        text = text.replace(api_key, "sk-***REDACTED***")
+        text = text.replace(api_key[:8], "sk-***")
+    text = re.sub(r'sk-[A-Za-z0-9_-]{10,}', 'sk-***REDACTED***', text)
+    text = re.sub(r'sk-ant-[A-Za-z0-9_-]{10,}', 'sk-ant-***REDACTED***', text)
+    text = re.sub(r'Bearer\s+[A-Za-z0-9_-]{10,}', 'Bearer ***REDACTED***', text)
+    return text
+
+
 class handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        """Suppress default stderr logging to prevent key leaks in logs."""
+        pass
+
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -282,23 +297,36 @@ class handler(BaseHTTPRequestHandler):
             self._respond(200, {"drafts": results, "count": len(results), "is_thread": is_thread})
 
         except httpx.HTTPStatusError as e:
+            detail = e.response.text[:300] if e.response else ""
+            detail = _scrub_secrets(detail, body.get("api_key", ""))
             self._respond(e.response.status_code, {
                 "error": f"LLM API hatasi: {e.response.status_code}",
-                "detail": e.response.text[:300],
+                "detail": detail,
             })
         except Exception as e:
-            self._respond(500, {"error": str(e)})
+            msg = _scrub_secrets(str(e), body.get("api_key", "") if 'body' in dir() else "")
+            self._respond(500, {"error": msg})
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _set_cors(self, origin):
+        host = self.headers.get("Host", "")
+        if origin and host and (host in origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", f"https://{host}" if host else "")
+        self.send_header("Vary", "Origin")
+
     def _respond(self, code, data):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        self._set_cors(origin)
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())

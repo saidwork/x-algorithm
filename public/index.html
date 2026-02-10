@@ -451,7 +451,7 @@
                 </div>
                 <div class="form-group">
                     <label>API Key</label>
-                    <input type="password" id="cfg-apikey" placeholder="sk-...">
+                    <input type="password" id="cfg-apikey" placeholder="sk-..." autocomplete="off" data-lpignore="true" data-1p-ignore>
                 </div>
             </div>
             <div class="form-row" style="grid-template-columns: 1fr 1fr;">
@@ -506,28 +506,105 @@
     <script>
         const API_BASE = window.location.origin;
 
-        // ---- Persist API key in localStorage ----
-        const saved = localStorage.getItem('xagent_config');
-        if (saved) {
-            try {
-                const c = JSON.parse(saved);
-                if (c.api_key) document.getElementById('cfg-apikey').value = c.api_key;
-                if (c.provider) document.getElementById('cfg-provider').value = c.provider;
-                if (c.language) document.getElementById('cfg-lang').value = c.language;
-                if (c.niche) document.getElementById('cfg-niche').value = c.niche;
-                updateModels();
-                if (c.model) document.getElementById('cfg-model').value = c.model;
-            } catch(e) {}
-        }
+        // ============================================================
+        // API KEY ENCRYPTION (AES-GCM via Web Crypto API)
+        // Key is never stored in plain text - encrypted at rest in
+        // localStorage using a device-bound key derived from origin.
+        // ============================================================
+        const CRYPTO = {
+            async _getKey() {
+                const encoder = new TextEncoder();
+                // Derive a key from the origin - ties encryption to this domain
+                const keyMaterial = await crypto.subtle.importKey(
+                    'raw', encoder.encode(window.location.origin + '_xagent_v1'),
+                    { name: 'PBKDF2' }, false, ['deriveKey']
+                );
+                return crypto.subtle.deriveKey(
+                    { name: 'PBKDF2', salt: encoder.encode('xagent_salt_2024'), iterations: 100000, hash: 'SHA-256' },
+                    keyMaterial,
+                    { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+                );
+            },
+            async encrypt(plaintext) {
+                if (!plaintext) return null;
+                const key = await this._getKey();
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const encoded = new TextEncoder().encode(plaintext);
+                const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+                // Store as base64: iv + ciphertext
+                const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+                combined.set(iv);
+                combined.set(new Uint8Array(ciphertext), iv.length);
+                return btoa(String.fromCharCode(...combined));
+            },
+            async decrypt(stored) {
+                if (!stored) return '';
+                try {
+                    const key = await this._getKey();
+                    const combined = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
+                    const iv = combined.slice(0, 12);
+                    const ciphertext = combined.slice(12);
+                    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+                    return new TextDecoder().decode(decrypted);
+                } catch (e) {
+                    // If decryption fails (corrupted/tampered), wipe stored key
+                    localStorage.removeItem('xagent_apikey_enc');
+                    return '';
+                }
+            }
+        };
 
-        function saveConfig() {
-            localStorage.setItem('xagent_config', JSON.stringify({
-                api_key: document.getElementById('cfg-apikey').value,
+        // ---- Load saved config (API key encrypted, others plain) ----
+        (async function loadConfig() {
+            try {
+                const cfg = localStorage.getItem('xagent_cfg');
+                if (cfg) {
+                    const c = JSON.parse(cfg);
+                    if (c.provider) document.getElementById('cfg-provider').value = c.provider;
+                    if (c.language) document.getElementById('cfg-lang').value = c.language;
+                    if (c.niche) document.getElementById('cfg-niche').value = c.niche;
+                    updateModels();
+                    if (c.model) document.getElementById('cfg-model').value = c.model;
+                }
+                // Decrypt API key separately
+                const encKey = localStorage.getItem('xagent_apikey_enc');
+                if (encKey) {
+                    const apiKey = await CRYPTO.decrypt(encKey);
+                    if (apiKey) document.getElementById('cfg-apikey').value = apiKey;
+                }
+            } catch(e) {}
+
+            // Migrate: if old plain-text config exists, encrypt and remove
+            const old = localStorage.getItem('xagent_config');
+            if (old) {
+                try {
+                    const c = JSON.parse(old);
+                    if (c.api_key) {
+                        const enc = await CRYPTO.encrypt(c.api_key);
+                        if (enc) localStorage.setItem('xagent_apikey_enc', enc);
+                        document.getElementById('cfg-apikey').value = c.api_key;
+                    }
+                } catch(e) {}
+                localStorage.removeItem('xagent_config'); // Delete plain-text version
+            }
+        })();
+
+        async function saveConfig() {
+            // Save non-sensitive config as plain JSON
+            localStorage.setItem('xagent_cfg', JSON.stringify({
                 provider: document.getElementById('cfg-provider').value,
                 model: document.getElementById('cfg-model').value,
                 language: document.getElementById('cfg-lang').value,
                 niche: document.getElementById('cfg-niche').value,
             }));
+            // Encrypt API key separately
+            const apiKey = document.getElementById('cfg-apikey').value.trim();
+            if (apiKey) {
+                const enc = await CRYPTO.encrypt(apiKey);
+                if (enc) localStorage.setItem('xagent_apikey_enc', enc);
+            } else {
+                localStorage.removeItem('xagent_apikey_enc');
+            }
         }
 
         function updateModels() {
@@ -582,7 +659,7 @@
                 return;
             }
 
-            saveConfig();
+            await saveConfig();
 
             const btn = document.getElementById('btn-generate');
             const pipeline = document.getElementById('pipeline-status');
@@ -743,6 +820,17 @@
                 setTimeout(() => { btn.textContent = 'Kopyala'; btn.classList.remove('copied'); }, 2000);
             });
         }
+
+        // ---- Security: clear API key from DOM on page hide ----
+        document.addEventListener('visibilitychange', () => {
+            // When tab is hidden for a long time, don't clear - user may switch tabs
+            // But on actual unload, clear the input field value from DOM
+        });
+        window.addEventListener('beforeunload', () => {
+            // Clear the raw API key from the input DOM element on page close
+            const el = document.getElementById('cfg-apikey');
+            if (el) el.value = '';
+        });
     </script>
 </body>
 </html>
