@@ -6,7 +6,6 @@ Calls LLM API and returns generated post variants with engagement predictions.
 from http.server import BaseHTTPRequestHandler
 import json
 import re
-import math
 import httpx
 
 # ---------------------------------------------------------------------------
@@ -24,7 +23,15 @@ Key principles:
 - End with engagement triggers (questions, CTAs, bold statements)
 - Adapt tone and style to the target audience
 - Never use cringe hashtag stuffing - max 1-2 natural hashtags
-- Understand that shorter posts often outperform longer ones"""
+- Understand that shorter posts often outperform longer ones
+- Prioritize conversation quality signals (replies, bookmarks, meaningful shares)
+- Keep claims specific and grounded for trust-sensitive topics (finance, crypto, real estate)"""
+
+DOMAIN_CONTEXT = {
+    "yatirim": "Focus on investing education, risk awareness, and actionable insights.",
+    "kripto": "Focus on market structure, volatility context, on-chain or macro narratives, and risk framing.",
+    "emlak": "Focus on local market dynamics, financing costs, rental yield, and practical buyer/seller guidance.",
+}
 
 GENERATION_PROMPT = """Generate {num_variants} variant(s) of an X post with these parameters:
 
@@ -83,6 +90,50 @@ ENGAGEMENT_WEIGHTS = {
     "mute": -20.0, "unfollow": -30.0, "report": -50.0,
 }
 
+HOOK_PATTERNS = [
+    r"^\d+\s",
+    r"^(How|Why|What|When|Stop|Don't|Most people|The truth|Here's what)",
+    r"^(Nasıl|Neden|Ne zaman|Çoğu kişi|Gerçek şu|Dikkat)",
+]
+
+CTA_PATTERN = (
+    r"(follow|repost|share|bookmark|comment|reply|thoughts\??|"
+    r"takip et|yeniden paylaş|paylaş|kaydet|yorum|fikrin ne|katılıyor musun)"
+)
+
+
+def normalize_domain(value: str) -> str:
+    val = (value or "").strip().lower()
+    mapping = {
+        "yatırım": "yatirim",
+        "yatirim": "yatirim",
+        "investment": "yatirim",
+        "investing": "yatirim",
+        "kripto": "kripto",
+        "crypto": "kripto",
+        "cryptocurrency": "kripto",
+        "emlak": "emlak",
+        "real_estate": "emlak",
+        "real estate": "emlak",
+        "property": "emlak",
+    }
+    return mapping.get(val, "")
+
+
+def infer_domain(topic: str, hint: str = "") -> str:
+    normalized_hint = normalize_domain(hint)
+    if normalized_hint:
+        return normalized_hint
+
+    text = (topic or "").lower()
+    if any(k in text for k in ["kripto", "crypto", "bitcoin", "ethereum", "altcoin", "defi"]):
+        return "kripto"
+    if any(k in text for k in ["emlak", "konut", "kira", "gayrimenkul", "real estate", "mortgage"]):
+        return "emlak"
+    if any(k in text for k in ["yatırım", "yatirim", "borsa", "hisse", "fon", "invest"]):
+        return "yatirim"
+    return ""
+
 
 def predict_engagement(text, trending_score=0.3, is_thread=False):
     char_count = len(text)
@@ -96,8 +147,8 @@ def predict_engagement(text, trending_score=0.3, is_thread=False):
         "is_thread": 1.0 if is_thread else 0.0,
         "is_timely": trending_score,
         "char_length_optimal": length_score,
-        "has_hook": 1.0 if re.search(r"^(How|Why|What|Stop|Don't|Most people|\d+\s)", text, re.IGNORECASE) else 0.0,
-        "has_cta": 1.0 if re.search(r"(follow|repost|share|bookmark|comment|reply|thoughts\??)", text, re.IGNORECASE) else 0.0,
+        "has_hook": 1.0 if any(re.search(p, text, re.IGNORECASE) for p in HOOK_PATTERNS) else 0.0,
+        "has_cta": 1.0 if re.search(CTA_PATTERN, text, re.IGNORECASE) else 0.0,
         "readability": 0.7,
     }
 
@@ -139,8 +190,8 @@ def predict_engagement(text, trending_score=0.3, is_thread=False):
     # Hook score
     hook_score = 0.0
     first_line = text.split("\n")[0]
-    for p in [r"^\d+\s", r"^(How|Why|What|When)\s", r"^(Stop|Don't|Never)\s",
-              r"^(The truth|Here's what|Most people|Unpopular opinion)", r"^(I just|After \d+)"]:
+    for p in [r"^\d+\s", r"^(How|Why|What|When|Nasıl|Neden)\s", r"^(Stop|Don't|Never|Dikkat)\s",
+              r"^(The truth|Here's what|Most people|Unpopular opinion|Gerçek şu|Çoğu kişi)", r"^(I just|After \d+)"]:
         if re.search(p, first_line, re.IGNORECASE):
             hook_score += 0.3
     if len(first_line) < 80:
@@ -149,9 +200,11 @@ def predict_engagement(text, trending_score=0.3, is_thread=False):
 
     # Engagement trigger score
     trigger = 0.0
-    for p in [r"\?$", r"(agree|disagree|thoughts)\??$", r"(share|repost|like if)\s", r"(comment|reply|tell me)\s"]:
+    for p in [r"\?$", r"(agree|disagree|thoughts|katılıyor musun|fikrin ne)\??$", r"(share|repost|like if|paylaş|yeniden paylaş)\s", r"(comment|reply|tell me|yorum yaz|yorumlara yaz|cevap ver)\s"]:
         if re.search(p, text, re.IGNORECASE):
             trigger += 0.25
+    if re.search(CTA_PATTERN, text, re.IGNORECASE):
+        trigger += 0.2
     if "\n" in text:
         trigger += 0.1
     pred["engagement_trigger_score"] = min(trigger, 1.0)
@@ -217,9 +270,10 @@ class handler(BaseHTTPRequestHandler):
             language = body.get("language", "tr")
             num_variants = body.get("num_variants", 3)
             brand_context = body.get("brand_description", "")
-            max_chars = body.get("max_chars", 280)
+            max_chars = max(40, min(280, int(body.get("max_chars", 280))))
             is_thread = content_type == "thread"
             key_points = body.get("key_points", [])
+            domain = infer_domain(topic, hint=body.get("domain", body.get("niche", "")))
 
             if not api_key:
                 self._respond(400, {"error": "API key gerekli"})
@@ -228,7 +282,13 @@ class handler(BaseHTTPRequestHandler):
                 self._respond(400, {"error": "Konu gerekli"})
                 return
 
-            brand_text = f"**Brand Voice:** {brand_context}" if brand_context else ""
+            domain_text = DOMAIN_CONTEXT.get(domain, "")
+            brand_bits = []
+            if brand_context:
+                brand_bits.append(f"**Brand Voice:** {brand_context}")
+            if domain_text:
+                brand_bits.append(f"**Domain Context:** {domain_text}")
+            brand_text = "\n".join(brand_bits)
 
             if is_thread:
                 kp_text = ""
